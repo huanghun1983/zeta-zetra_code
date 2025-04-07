@@ -49,10 +49,15 @@ def pivot_id(ohlc: pd.DataFrame, l:int , n1:int , n2:int ):
 
     bar = Bar(f'Processing pivot for n1:{n1} and n2:{n2}', max=len(range(l-n1, l+n2+1)))
 
+    # 如果遇到
     for i in range(l-n1, l+n2+1):
+        # if ohlc.loc[l,"Low"] == ohlc.loc[i, "Low"] and i < l:
+        #     pivot_low = 0
         if(ohlc.loc[l,"Low"] > ohlc.loc[i, "Low"]):
             pivot_low = 0
 
+        # if ohlc.loc[l,"High"] == ohlc.loc[i, "High"] and i < l:
+        #     pivot_high = 0
         if(ohlc.loc[l, "High"] < ohlc.loc[i, "High"]):
             pivot_high = 0
 
@@ -107,20 +112,22 @@ def _find_points(df, candle_id, back_candles):
     maxacount=0 #maximas after head
     
     for i in range(candle_id-back_candles, candle_id+back_candles):
+        # 这里是找到局部低点
         if df.loc[i,"ShortPivot"] == 1:
-            minim = np.append(minim, df.loc[i, "Low"])
-            xxmin = np.append(xxmin, i)        
+            minim = np.append(minim, df.loc[i, "Low"]) #低点的值
+            xxmin = np.append(xxmin, i) #低点的索引  
             if i < candle_id:
-                minbcount=+1
+                minbcount=+1 #头部前的低点数
             elif i>candle_id:
-                minacount+=1
+                minacount+=1 #头部后的低点数
+        # 这里是找到局部高点
         if df.loc[i, "ShortPivot"] == 2:
-            maxim = np.append(maxim, df.loc[i, "High"])
-            xxmax = np.append(xxmax, i)
+            maxim = np.append(maxim, df.loc[i, "High"]) #高点的值
+            xxmax = np.append(xxmax, i) #高点的索引
             if i < candle_id:
-                maxbcount+=1
+                maxbcount+=1 #头部前的高点数
             elif i>candle_id:
-                maxacount+=1
+                maxacount+=1 #头部后的高点数
     
 
     print(f"_find_points return maxbcount:{maxbcount}, maxacount:{maxacount}")
@@ -232,19 +239,38 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
                 maxim = np.append(maxim, ohlc.loc[i, "High"])
                 xxmax = np.append(xxmax, i)              
 
-        
+        # if len(minim) < 5 or len(maxim) < 5:
+        #     print(f"get minim len:{len(minim)}, maxim len:{len(maxim)}, continue")
+        #     bar.next()
+        #     continue
 
-        if hs:
+        # if hs:
 
-            headidx = np.argmax(maxim, axis=0)  
+        #     headidx = np.argmax(maxim, axis=0)  
 
-            hsx = ohlc.loc[[xxmax[headidx-1],xxmin[0],xxmax[headidx],xxmin[1],xxmax[headidx+1] ],"Date"]
-            hsy = [maxim[headidx-1], minim[0], maxim[headidx], minim[1], maxim[headidx+1]]
-        else:
+        #     hsx = ohlc.loc[[xxmax[headidx-1],xxmin[0],xxmax[headidx],xxmin[1],xxmax[headidx+1] ],"Date"]
+        #     hsy = [maxim[headidx-1], minim[0], maxim[headidx], minim[1], maxim[headidx+1]]
+        # else:
 
-            headidx = np.argmin(minim, axis=0)
-            hsx = ohlc.loc[[xxmin[headidx-1],xxmax[0],xxmin[headidx],xxmax[1],xxmin[headidx+1] ],"Date"]
-            hsy = [minim[headidx-1], maxim[0], minim[headidx], maxim[1], minim[headidx+1]]
+        #     headidx = np.argmin(minim, axis=0)
+        #     hsx = ohlc.loc[[xxmin[headidx-1],xxmax[0],xxmin[headidx],xxmax[1],xxmin[headidx+1] ],"Date"]
+        #     hsy = [minim[headidx-1], maxim[0], minim[headidx], maxim[1], minim[headidx+1]]
+
+        try:
+            if hs:
+
+                headidx = np.argmax(maxim, axis=0)  
+
+                hsx = ohlc.loc[[xxmax[headidx-1],xxmin[0],xxmax[headidx],xxmin[1],xxmax[headidx+1] ],"Date"]
+                hsy = [maxim[headidx-1], minim[0], maxim[headidx], minim[1], maxim[headidx+1]]
+            else:
+
+                headidx = np.argmin(minim, axis=0)
+                hsx = ohlc.loc[[xxmin[headidx-1],xxmax[0],xxmin[headidx],xxmax[1],xxmin[headidx+1] ],"Date"]
+                hsy = [minim[headidx-1], maxim[0], minim[headidx], maxim[1], minim[headidx+1]]
+        except:
+            print("data not enough, continue")
+            continue
 
         ohlc_copy = ohlc.copy()
         ohlc_copy.set_index("Date", inplace=True)
@@ -276,7 +302,7 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
                 type='candle',
                 style='charles',
                 addplot=[hs_l],
-                alines=dict(alines=levels,colors=['purple'], alpha=0.5,linewidths=20),
+                alines=dict(alines=levels,colors=['purple'], alpha=0.5,linewidths=10),
                 savefig=f"{save_}"
                 )
 
@@ -300,6 +326,11 @@ def print_pivot_values(pivot_series):
     for idx, val in pivot_2.items():
         print(f"👉 Index: {idx}, Pivot: {val} (High)")
 
+    print("\n🔻🟢 Pivot == 2 的行（代表极点）:")
+    pivot_2 = pivot_series[(pivot_series == 1) | (pivot_series == 2)]
+    for idx, val in pivot_2.items():
+        print(f"👉 Index: {idx}, Pivot: {val} (High)")
+
 
 
 if __name__ == "__main__":
@@ -308,7 +339,7 @@ if __name__ == "__main__":
 
     dir_ = os.path.realpath('').split("research")[0]
     # file = os.path.join( dir_,'data','eurusd-4h.csv') 
-    file = os.path.join( dir_,'data','20250403_214832_TURBO-USDT_5m_2000_half.csv') 
+    file = os.path.join( dir_,'data','20250403_214832_TURBO-USDT_5m_2000.csv') 
 
     df = pd.read_csv(file)
 
