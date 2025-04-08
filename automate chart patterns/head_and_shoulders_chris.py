@@ -61,7 +61,6 @@ def pivot_id(ohlc: pd.DataFrame, l:int , n1:int , n2:int ):
         if(ohlc.loc[l, "High"] < ohlc.loc[i, "High"]):
             pivot_high = 0
 
-
         bar.next()
 
     bar.finish()
@@ -129,7 +128,6 @@ def _find_points(df, candle_id, back_candles):
             elif i>candle_id:
                 maxacount+=1 #头部后的高点数
     
-
     print(f"_find_points return maxbcount:{maxbcount}, maxacount:{maxacount}")
     return maxim, minim, xxmax, xxmin, maxacount, minacount, maxbcount, minbcount
 
@@ -186,8 +184,7 @@ def find_head_and_shoulders(df: pd.DataFrame, back_candles: int = 14) -> List[in
         
         if df.loc[candle_id, "Pivot"] != 2 or df.loc[candle_id,"ShortPivot"] != 2:
             continue
-        
-        
+         
         maxim, minim, xxmax, xxmin, maxacount, minacount, maxbcount, minbcount = _find_points(df, candle_id, back_candles)
         if minbcount<1 or minacount<1 or maxbcount<1 or maxacount<1:
             continue
@@ -195,17 +192,174 @@ def find_head_and_shoulders(df: pd.DataFrame, back_candles: int = 14) -> List[in
         slmin, intercmin, rmin, pmin, semin = linregress(xxmin, minim)
         headidx = np.argmax(maxim, axis=0)
 
-        
         all_points.append(candle_id)
         # if maxim[headidx]-maxim[headidx-1]>1.5e-3 and maxim[headidx]-maxim[headidx+1]>1.5e-3 and abs(slmin)<=1e-4: 
         # if maxim[headidx]-maxim[headidx-1]>1.5e-3 and maxim[headidx]-maxim[headidx+1]>1.5e-3: 
         #     all_points.append(candle_id)
             
-            
-
     return all_points
 
+def delete_continuous_pivot(x, y):
+    """
+    minim和maxim的连续点去掉
 
+    """
+    # 初始化一个布尔掩码，用于标记保留的元素
+    mask = np.ones(len(x), dtype=bool)
+
+    # 从前往后检查：如果后一个比前一个大1，就把前一个设为False（不保留）
+    for i in range(len(x) - 1):
+        if x[i + 1] - x[i] == 1:
+            mask[i] = False
+
+    # 应用掩码，生成新的数组
+    return x[mask], y[mask]
+
+def get_hs_xy(xxmax, maxim, xxmin, minim, hs=True):
+    """
+    识别以(xxmax, maxim)为头肩，
+    以xxmin, minim为颈线的点，并返回对应的hsx和hsy
+
+    如果想识别倒头肩底，则只要将传入的xxmax,maxim和xxmin,minim位置互换即可
+    
+    其中针对不完全满足头肩底的情况，也返回假头肩底的结果供参考
+    """
+    hsx = []        
+    hsy = []
+
+    # 是否是真头肩的标记
+    is_true_hs = True
+
+    # 2. hs，找到最高的点
+    try:
+        # 2. 初始化头肩底的下标，因为当前数据不一定够，如果没有头肩底，则找到一头一肩作为M头也可以
+        # 这里的_indx指的是numpy里面的索引，而_val才是ohlc.loc里面的行号
+        left_shoulder_indx = None
+        neckline_left_indx = None
+        head_indx = None
+        neckline_right_indx = None
+        right_shoulder_indx = None
+
+        # 这里的_val指的是ohlc.loc里面的行号
+        left_shoulder_val = None
+        neckline_left_val = None
+        head_val = None
+        neckline_right_val = None
+        right_shoulder_val = None
+
+        # 如果hs为True，则head找最大值，否则head找最小值
+        if hs:
+            head_indx = np.argmax(maxim, axis=0)
+        else:
+            head_indx = np.argmin(maxim, axis=0)
+        # 如果headidx前后都有值，则取前后两个点作为hs的起始点
+        #        __
+        #     __/  \__ 
+        #    /        \
+        #    LS   H   RS
+        if head_indx > 0 and head_indx < len(maxim) - 1:
+            left_shoulder_indx = head_indx - 1
+            left_shoulder_val = xxmax[head_indx - 1]
+            head_val = xxmax[head_indx]
+            right_shoulder_indx = head_indx + 1
+            right_shoulder_val = xxmax[head_indx + 1]
+
+        # 如果headidx后面没有值，但是maxim里面的元素有3个，则也算一种假头肩，只是头部在最后
+        elif head_indx > 0 and len(maxim) >=3:
+            head_indx = head_indx - 1 # head前移一位，返回头部在最后的假头肩
+            left_shoulder_indx = head_indx - 1
+            left_shoulder_val = xxmax[head_indx - 1]
+            head_val = xxmax[head_indx]
+            right_shoulder_indx = head_indx + 1
+            right_shoulder_val = xxmax[head_indx + 1]
+            is_true_hs = False
+
+        # 如果headidx后面没有值并且不到3个元素，则只有一个头一个肩
+        #        __
+        #     __/  |
+        #    /        
+        #    LS   H   
+        elif head_indx > 0:
+            left_shoulder_indx = head_indx - 1
+            left_shoulder_val = xxmax[head_indx - 1]
+            head_val = xxmax[head_indx] 
+
+        # 如果headidx前面没有值，但是maxim里面的元素有3个，则也算一种假头肩，只是头部在前面
+        elif head_indx < len(maxim) - 1 and len(maxim) >=3:
+            head_indx = head_indx + 1 # head后移一位，返回头部在最前的假头肩
+            left_shoulder_indx = head_indx - 1
+            left_shoulder_val = xxmax[head_indx - 1]
+            head_val = xxmax[head_indx]
+            right_shoulder_indx = head_indx + 1
+            right_shoulder_val = xxmax[head_indx + 1]
+            is_true_hs = False
+
+        # 如果headidx前面没有值并且不到3个元素，则只有一个头一个肩
+        #     __
+        #    |  \__ 
+        #          \
+        #      H   RS
+        elif head_indx < len(maxim) - 1:
+            head_val = xxmax[head_indx]
+            right_shoulder_indx = head_indx + 1
+            right_shoulder_val = xxmax[head_indx + 1]
+        # 如果headidx前后都没有值，则说明只有一个头部，继续
+        else:
+            print("there is only one head, continue")
+            return None, None, is_true_hs
+
+        for idx, val in enumerate(xxmin):
+            # 如果左肩存在，则找到左肩和头部中的点作为neckline_left
+            if left_shoulder_val is not None and left_shoulder_val < val < head_val:
+                neckline_left_indx = idx
+                neckline_left_val = val
+            # 如果右肩存在，则找到头部和右肩中的点作为neckline_right
+            elif right_shoulder_val is not None and head_val < val < right_shoulder_val:
+                neckline_right_indx = idx
+                neckline_right_val = val
+            # 如果左肩不存在，则找到头部前面的点作为neckline_left
+            if left_shoulder_val is None and val < head_val:
+                neckline_left_indx = idx
+                neckline_left_val = val
+            # 如果右肩不存在，则找到头部后面的点作为neckline_right
+            if right_shoulder_val is None and val > head_val:
+                neckline_right_indx = idx
+                neckline_right_val = val
+
+            # 如果两个都找到了就跳出
+            if neckline_left_val is not None and neckline_right_val is not None:
+                break
+
+        # 只将有的赋值
+        # 左肩
+        if left_shoulder_val is not None:
+            # hsx = hsx.append(ohlc.loc[left_shoulder_val, "Date"])
+            hsx.append(ohlc.loc[left_shoulder_val, "Date"])
+            hsy.append(maxim[left_shoulder_indx])
+        # 左颈
+        if neckline_left_val is not None:
+            # hsx = hsx.append(ohlc.loc[neckline_left_val, "Date"])
+            hsx.append(ohlc.loc[neckline_left_val, "Date"])
+            hsy.append(minim[neckline_left_indx])
+        # 头部
+        # hsx = hsx.append(ohlc.loc[head_val, "Date"])
+        hsx.append(ohlc.loc[head_val, "Date"])
+        hsy.append(maxim[head_indx])
+        # 右颈
+        if neckline_right_val is not None:
+            # hsx = hsx.append(ohlc.loc[neckline_right_val, "Date"])
+            hsx.append(ohlc.loc[neckline_right_val, "Date"])
+            hsy.append(minim[neckline_right_indx])
+        # 右肩
+        if right_shoulder_val is not None:
+            # hsx = hsx.append(ohlc.loc[right_shoulder_val, "Date"])
+            hsx.append(ohlc.loc[right_shoulder_val, "Date"])
+            hsy.append(maxim[right_shoulder_indx])
+        
+        return hsx, hsy, is_true_hs
+    except:
+            print("data not enough, continue")
+            return None, None, is_true_hs
 
 def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_shoulders", hs=True):
     """
@@ -238,16 +392,29 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
             if ohlc.loc[i, "ShortPivot"] == 2:
                 maxim = np.append(maxim, ohlc.loc[i, "High"])
                 xxmax = np.append(xxmax, i)              
+        
+        # 1. 删除连续的点
+        xxmin, minim = delete_continuous_pivot(xxmin, minim)
+        xxmax, maxim = delete_continuous_pivot(xxmax, maxim)
 
-        # if len(minim) < 5 or len(maxim) < 5:
-        #     print(f"get minim len:{len(minim)}, maxim len:{len(maxim)}, continue")
-        #     bar.next()
-        #     continue
+        # 2. 找到头肩底的下标，因为当前数据不一定够，如果没有头肩底，则找到一头一肩作为M头也可以
+        hsx = None
+        hsy = None
+
+        # 3. hs为true则找头肩，为false则找倒头肩底
+        is_true_hs = True
+        if hs:
+            hsx, hsy, is_true_hs = get_hs_xy(xxmax, maxim, xxmin, minim, hs)
+        else:
+            hsx, hsy, is_true_hs = get_hs_xy(xxmin, minim, xxmax, maxim, hs)
+        
+        if hsx is None or hsy is None:
+            print("no hs found, continue")
+            bar.next()
+            continue
 
         # if hs:
-
         #     headidx = np.argmax(maxim, axis=0)  
-
         #     hsx = ohlc.loc[[xxmax[headidx-1],xxmin[0],xxmax[headidx],xxmin[1],xxmax[headidx+1] ],"Date"]
         #     hsy = [maxim[headidx-1], minim[0], maxim[headidx], minim[1], maxim[headidx+1]]
         # else:
@@ -255,22 +422,6 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
         #     headidx = np.argmin(minim, axis=0)
         #     hsx = ohlc.loc[[xxmin[headidx-1],xxmax[0],xxmin[headidx],xxmax[1],xxmin[headidx+1] ],"Date"]
         #     hsy = [minim[headidx-1], maxim[0], minim[headidx], maxim[1], minim[headidx+1]]
-
-        try:
-            if hs:
-
-                headidx = np.argmax(maxim, axis=0)  
-
-                hsx = ohlc.loc[[xxmax[headidx-1],xxmin[0],xxmax[headidx],xxmin[1],xxmax[headidx+1] ],"Date"]
-                hsy = [maxim[headidx-1], minim[0], maxim[headidx], minim[1], maxim[headidx+1]]
-            else:
-
-                headidx = np.argmin(minim, axis=0)
-                hsx = ohlc.loc[[xxmin[headidx-1],xxmax[0],xxmin[headidx],xxmax[1],xxmin[headidx+1] ],"Date"]
-                hsy = [minim[headidx-1], maxim[0], minim[headidx], maxim[1], minim[headidx+1]]
-        except:
-            print("data not enough, continue")
-            continue
 
         ohlc_copy = ohlc.copy()
         ohlc_copy.set_index("Date", inplace=True)
@@ -280,11 +431,8 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
         for l in levels:
             ohlc_copy.loc[l[0].strftime("%Y-%m-%dT%H:%M:%S.%f"),"HS"] = l[1]
 
-
-
         ohlc_hs  = ohlc_copy.iloc[point-(back_candles+6):point+back_candles+6, : ]
         hs_l       = mpf.make_addplot(ohlc_hs["HS"], type="scatter", color='r', marker="v", markersize=200)
-        fn       = f"{fname}-{point}.png"
 
         # 添加对没有目录的容错处理，避免保存文件时报错，by chris
         # save_   = os.path.join( dir_,'images','analysis',fn)
@@ -295,8 +443,8 @@ def save_plot(ohlc, all_points, back_candles, analysis_file, fname="head_and_sho
         # 检查目录是否存在，如果不存在则创建
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        
-        fn       = f"{fname}-{point}.png"
+
+        fn      = f"{fname}-{'T' if is_true_hs else 'F'}-{point}-{ohlc.loc[point, 'Date'].strftime('%Y%m%d-%H%M')}.png"
         save_   = os.path.join(save_dir, fn)
         mpf.plot(ohlc_hs,
                 type='candle',
@@ -362,7 +510,8 @@ if __name__ == "__main__":
     # all_points_inverse = find_inverse_head_and_shoulders(ohlc, back_candles=back_candles)
     
     # Save plots
-    save_plot(ohlc, all_points, back_candles, file, fname="head_and_shoulders", hs=True)
+    save_plot(ohlc, all_points, back_candles, file, fname="hs", hs=True)
+    save_plot(ohlc, all_points, back_candles, file, fname="ihs", hs=False)
     # save_plot(ohlc, all_points_inverse, back_candles, file, fname="inverse_head_and_shoulders", hs=False)
 
     # 原始的数据也画个图做对比
@@ -384,12 +533,13 @@ if __name__ == "__main__":
     # 调整涨跌颜色
     mc = mpf.make_marketcolors(up='#00FF00', down='#FF0000', wick={'up': 'green', 'down': 'red'}, edge={'up': 'green', 'down': 'red'})
     # 创建高清风格
-    s = mpf.make_mpf_style(marketcolors=mc, gridcolor='gray', gridstyle='--')
+    # s = mpf.make_mpf_style(marketcolors=mc, gridcolor='gray', gridstyle='--')
     # # 绘制K线图并保存为PNG文件
     # mpf.plot(df, type='candle', style=s, title="K-Line", ylabel="Price", 
     #          ylabel_lower="Volume", savefig=file_png)
     # 绘制 K 线图
-    mpf.plot(df, type='candle', style=s, title="K-Line", ylabel="Price", ylabel_lower="Volume",
+    # mpf.plot(df, type='candle', style=s, title="K-Line", ylabel="Price", ylabel_lower="Volume",
+    mpf.plot(df, type='candle', style="charles", title="K-Line", ylabel="Price", ylabel_lower="Volume",
             figsize=(12, 6),  # 调整图像大小
             # line_width=1.2,  # 增加 K 线宽度
             figratio=(3, 2),
